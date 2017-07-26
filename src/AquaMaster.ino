@@ -13,29 +13,19 @@
  I2CSoilMoistureSensor sensor;
 
  const int solenoidPin = D2;
- const int resetChirp = D3;
  const int blueLED = D7;
 
  unsigned long waterTime = 60000;
  String RSSIdescription = "";
  String RSSIstring = "";
  String capDescription = "";
- int capValue = 0;
+ int capValue = 0;      // This is where we store the soil moisture sensor raw data
  int wateringNow = 0;
  int waterEnabled = 0;
  int currentPeriod = 0;  // Change length of period for testing 2 times in main loop
 
 
 void setup() {
-  Wire.begin();
-  Serial.begin(9600);
-  pinMode(solenoidPin,OUTPUT);
-  digitalWrite(solenoidPin, LOW);
-  pinMode(blueLED,OUTPUT);
-  pinMode(resetChirp,OUTPUT);
-
-  Time.zone(-4);    // Raleigh DST (watering is for the summer)
-
   Particle.variable("Watering", wateringNow);
   Particle.variable("WiFiStrength", RSSIdescription);
   Particle.variable("RSSI",RSSIstring);
@@ -44,7 +34,15 @@ void setup() {
   Particle.variable("Enabled", waterEnabled);
   Particle.function("start-stop", startStop);
   Particle.function("Enabled", wateringEnabled);
+  Particle.connect();    // <-- now connect to the cloud, which ties up the system thread
 
+  Wire.begin();
+  Serial.begin(9600);
+  pinMode(solenoidPin,OUTPUT);
+  digitalWrite(solenoidPin, LOW);
+  pinMode(blueLED,OUTPUT);
+
+  Time.zone(-4);    // Raleigh DST (watering is for the summer)
 
   sensor.begin(); // reset sensor
   delay(1000); // give some time to boot up
@@ -180,13 +178,13 @@ int getWiFiStrength()
 
 void getMoisture(int value)
 {
-  if ((value >= 500) || (value <=300))
+  if ((value >= 550) || (value <=300))
   {
     capDescription = "error";
   }
   else
   {
-    int strength = map(value, 300, 500, 0, 5);
+    int strength = map(value, 300, 550, 0, 5);
     switch (strength)
     {
       case 0:
