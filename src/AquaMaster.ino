@@ -9,7 +9,7 @@
  SYSTEM_THREAD(ENABLED);
 
  // Finally, here are the variables I want to change often and pull them all together here
- #define SOFTWARERELEASENUMBER "0.26"
+ #define SOFTWARERELEASENUMBER "0.27"
 
  #include <I2CSoilMoistureSensor.h>
 
@@ -26,9 +26,10 @@
  unsigned long waterTime = 0;             // How long with the watering go in the main loop
  int startWaterHour = 6;                  // When can we start watering
  int stopWaterHour = 8;                   // When do we stop for the day
- char RSSIdescription[17];
- char RSSIstring[5];
+ char RSSIdescription[12];
+ char Signal[17];
  char capDescription[12];
+ char Moisture[15];
  int capValue = 0;      // This is where we store the soil moisture sensor raw data
  int wateringNow = 0;
  int waterEnabled = 1;
@@ -44,9 +45,8 @@ void setup() {
   digitalWrite(donePin, LOW);
 
   Particle.variable("Watering", wateringNow);
-  Particle.variable("WiFiStrength", RSSIdescription);
-  Particle.variable("RSSI",RSSIstring);
-  Particle.variable("Moisture", capDescription);
+  Particle.variable("WiFiStrength", Signal);
+  Particle.variable("Moisture", Moisture);
   Particle.variable("Enabled", waterEnabled);
   Particle.variable("Release",releaseNumber);
   Particle.function("start-stop", startStop);
@@ -175,7 +175,6 @@ int wateringEnabled(String command)
 int getWiFiStrength()
 {
   int wifiRSSI = WiFi.RSSI();
-  strcpy(RSSIstring,String(wifiRSSI));
   if (wifiRSSI >= 0)
   {
     strcpy(RSSIdescription,"Error");
@@ -203,6 +202,9 @@ int getWiFiStrength()
       strcpy(RSSIdescription,"Great");
       break;
   }
+  strcpy(Signal,RSSIdescription);
+  strcat(Signal,": ");
+  strcat(Signal,String(wifiRSSI));
 }
 
 
@@ -214,7 +216,7 @@ void getMoisture()
   NonBlockingDelay(3000);
   if ((capValue >= 650) || (capValue <=300))
   {
-    strcpy(capDescription,"Error: ");
+    strcpy(capDescription,"Error");
   }
   else
   {
@@ -222,27 +224,29 @@ void getMoisture()
     switch (strength)
     {
       case 0:
-        strcpy(capDescription,"Very Dry: ");
+        strcpy(capDescription,"Very Dry");
         break;
       case 1:
-        strcpy(capDescription,"Dry: ");
+        strcpy(capDescription,"Dry");
         break;
       case 2:
-        strcpy(capDescription,"Normal: ");
+        strcpy(capDescription,"Normal");
         break;
       case 3:
-        strcpy(capDescription,"Wet: ");
+        strcpy(capDescription,"Wet");
         break;
       case 4:
-        strcpy(capDescription,"Very Wet: ");
+        strcpy(capDescription,"Very Wet");
         break;
       case 5:
-        strcpy(capDescription,"Waterlogged: ");
+        strcpy(capDescription,"Waterlogged");
         break;
     }
   }
-  strcat(capDescription,String(capValue));
-  Particle.publish("Moisture Level", capDescription);
+  strcpy(Moisture,capDescription);
+  strcat(Moisture,": ");
+  strcat(Moisture,String(capValue));
+  Particle.publish("Moisture Level", Moisture);
 }
 
 void NonBlockingDelay(int millisDelay)  // Used for a non-blocking delay
