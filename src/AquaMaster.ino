@@ -116,7 +116,7 @@ void loop() {
       {
         if ((strcmp(capDescription,"Very Dry") == 0) || (strcmp(capDescription,"Dry") == 0) || (strcmp(capDescription,"Normal") == 0))
         {
-          if (currentPeriod != lastWateredPeriod && currentDay != lastWateredDay)
+          if (currentPeriod != lastWateredPeriod || currentDay != lastWateredDay)
           {
             if (expectedRainfallToday <= 1.1)
             {
@@ -152,7 +152,7 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   // Upon reset, the water will be turned off averting disaster
   digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
   digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
-  doneEnabled = false;          // Will suspend watchdog petting until water is turned off
+  //doneEnabled = false;          // Will suspend watchdog petting until water is turned off
   Particle.publish("Watering","Watering");
   digitalWrite(blueLED, HIGH);
   digitalWrite(solenoidPin, HIGH);
@@ -255,13 +255,13 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  if ((capValue >= 652) || (capValue <=299))
+  if ((capValue >= 652) || (capValue <=349))
   {
     strcpy(capDescription,"Error");
   }
   else
   {
-    int strength = map(capValue, 300, 651, 0, 5);
+    int strength = map(capValue, 350, 651, 0, 5);
     switch (strength)
     {
       case 0:
