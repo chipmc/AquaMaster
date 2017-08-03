@@ -1,0 +1,11 @@
+{
+  "event": "weatherU_hook",
+  "url": "http://api.wunderground.com/api/d527f77e6c685457/forecast/q/nc/raleigh-durham.json",
+  "requestType": "POST",
+  "headers": null,
+  "query": null,
+  "responseTemplate": "{{#forecast}}{{#simpleforecast}}{{#forecastday}}{{date.day}}~{{qpf_allday.in}}~{{/forecastday}}{{/simpleforecast}}{{/forecast}}",
+  "json": null,
+  "auth": null,
+  "mydevices": true
+}
