@@ -24,30 +24,36 @@ const int donePin = D6;              // Pin the Electron uses to "pet" the watch
 const int wakeUpPin = A7;            // This is the Particle Electron WKP pin
 
 // Program variables
+// Watering Variables
 unsigned long oneMinuteMillis = 60000;    // For Testing the system and smaller adjustments
 int shortWaterMinutes = 1;
 int longWaterMinutes = 5;
-unsigned long waterTime = 0;             // How long with the watering go in the main loop
+int wateringMinutes = 0;             // How long will we water based on time or Moisture
 int startWaterHour = 5;                  // When can we start watering
 int stopWaterHour = 8;                   // When do we stop for the day
-char RSSIdescription[12];
-char Signal[17];
-char capDescription[12];
-char Moisture[15];
-int wateringMinutes = 0;             // How long will we water based on time or Moisture
-int capValue = 0;      // This is where we store the soil moisture sensor raw data
-int soilTemp = 0;
 int wateringNow = 0;
 int waterEnabled = 1;
+int expectedRainfallToday = 0;        // From Weather Underground Simple Forecast qpf_allday
+
+// Measurement Variables
+char Signal[17];                        // Used to communicate Wireless RSSI and Description
+int capValue = 0;                       // This is where we store the soil moisture sensor raw data
+int soilTemp = 0;                       // Soil Temp is measured 3" deep
+char capDescription[12];                // Characterize using a map function
+char Moisture[15];                      // Combines description and capValue
+
+// Time Period Variables
 int currentPeriod = 0;  // Change length of period for testing 2 times in main loop
 int lastWateredPeriod = 0; // So we only wanter once an hour
 int lastWateredDay = 0;   // Need to reset the last watered period each day
 int currentDay = 0;
+
+// Control Variables
 const char* releaseNumber = SOFTWARERELEASENUMBER;  // Displays the release on the menu
 volatile bool doneEnabled = true;    // This enables petting the watchdog
 int lastWateredPeriodAddr = 0;      // Where I store the last watered period in EEPROM
 int lastWateredDayAddr = 4;
-int expectedRainfallToday = 0;
+
 
 void setup() {
   pinMode(donePin,OUTPUT);       // Allows us to pet the watchdog
@@ -121,7 +127,7 @@ void loop() {
               if (currentPeriod == startWaterHour) wateringMinutes = longWaterMinutes;
               else wateringMinutes = shortWaterMinutes;
             }
-            else Particle.publish("Heavy Rain Expected");
+            else Particle.publish("Watering","Heavy Rain Expected");
           }
           else Particle.publish("Watering","Already Watered");
         }
@@ -130,15 +136,23 @@ void loop() {
       else Particle.publish("Watering","Not Time");
     }
     else Particle.publish("Watering","Not Enabled");
-    waterTime = wateringMinutes * oneMinuteMillis;
+    unsigned long waterTime = wateringMinutes * oneMinuteMillis;
     sendToUbidots();
     if (waterTime) turnOnWater(waterTime);
     wateringMinutes = 0;
   }
 }
 
-void turnOnWater(unsigned long duration)
+void turnOnWater(unsigned long duration)    // Where we water the plants - critical function completes
 {
+  // We are going to use the watchdog timer to ensure this function completes successfully
+  // Need a watchdog interval that is slighly longer than the longest watering cycle
+  // We will pet the dog then disable petting until the end of the function
+  // That way, if the Particle freezes while the water is on, it will be reset by the watchdog
+  // Upon reset, the water will be turned off averting disaster
+  digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
+  digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
+  doneEnabled = false;          // Will suspend watchdog petting until water is turned off
   Particle.publish("Watering","Watering");
   digitalWrite(blueLED, HIGH);
   digitalWrite(solenoidPin, HIGH);
@@ -147,20 +161,18 @@ void turnOnWater(unsigned long duration)
   digitalWrite(blueLED, LOW);
   digitalWrite(solenoidPin, LOW);
   wateringNow = 0;
+  doneEnabled = true;         // Successful response - can pet the dog again
   Particle.publish("Watering","Done");
 }
 
-void sendToUbidots()
+void sendToUbidots()      // Houly update to Ubidots for serial data logging and analysis
 {
-  //String status = "Oops";
-  //String data = String::format("{\"Moisture\":%i, \"Watering\": { \"value\": %i, \"context\": {\"status\":\"status\"}}, \"SoilTemp\":%i}",capValue, wateringMinutes, soilTemp);
   String data = String::format("{\"Moisture\":%i, \"Watering\":%i, \"SoilTemp\":%i}",capValue, wateringMinutes, soilTemp);
-  //String data = "{\"SoilTemp\":\"19\",\"Watering\":{\"value\": \"0\", \"context\": \"Oops\"},\"Moisture\":\"516\"}";
   Particle.publish("AquaMaster", data, PRIVATE);
   NonBlockingDelay(1000);     //Makes sure we are spacing out our Particle.publish requests
 }
 
-int startStop(String command)   // Will reset the local counts
+int startStop(String command)   // So we can manually turn on the water for testing and setup
 {
   if (command == "start")
   {
@@ -183,7 +195,7 @@ int startStop(String command)   // Will reset the local counts
   }
 }
 
-int wateringEnabled(String command)
+int wateringEnabled(String command)       // If I sense something is amiss, I wanted to be able to easily disable watering
   {
     if (command == "enabled")
     {
@@ -202,12 +214,13 @@ int wateringEnabled(String command)
     }
   }
 
-int getWiFiStrength()
+int getWiFiStrength()       // Measure and describe wireless signal strength
 {
   int wifiRSSI = WiFi.RSSI();
+  char RSSIdescription[12];
   if (wifiRSSI >= 0)
   {
-    strcpy(RSSIdescription,"Error");
+    strcpy(Signal,"Error");
     return 0;
   }
   int strength = map(wifiRSSI, -127, -1, 0, 5);
@@ -234,12 +247,12 @@ int getWiFiStrength()
   }
   strcpy(Signal,RSSIdescription);
   strcat(Signal,": ");
-  strcat(Signal,String(wifiRSSI));
+  strcat(Signal,String(wifiRSSI));            // Signal is both description and RSSI for Particle variable
   return 1;
 }
 
 
-void getMoisture()
+void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
   if ((capValue >= 652) || (capValue <=299))
@@ -287,8 +300,11 @@ void NonBlockingDelay(int millisDelay)  // Used for a non-blocking delay
   return;
 }
 
-void weatherHandler(const char *event, const char *data)
+void weatherHandler(const char *event, const char *data)    // Extracts the expected rainfall for today from webhook response
 {
+  // Uses forecast JSON for Raleigh-Durham Airport
+  // Response template gets current date and qpf_allday
+  // Only look at the current day
   if (!data) {              // First check to see if there is any data
     Particle.publish("Weather", "No Data");
     return;
@@ -301,7 +317,7 @@ void weatherHandler(const char *event, const char *data)
   if (forecastDay != currentDay) expectedRainfallToday = 0;   // In case we have the wrong day's forecast
 }
 
-void dataHandler(const char *event, const char *data)
+void dataHandler(const char *event, const char *data)   // Looks at the response from Ubidots - not acting on this now
 {
   if (!data) {              // First check to see if there is any data
     Particle.publish("WebHook", "No Data");
@@ -346,9 +362,9 @@ void dataHandler(const char *event, const char *data)
   }
 }
 
-void watchdogISR()
+void watchdogISR()    // Will pet the dog ... if petting is allowed
 {
-  if (doneEnabled)
+  if (doneEnabled)    // This allows us to ensure we don't have a system panic while the water is running
   {
     digitalWrite(donePin, HIGH);
     digitalWrite(donePin, LOW);
