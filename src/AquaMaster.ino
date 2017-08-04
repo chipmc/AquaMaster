@@ -85,6 +85,10 @@ void setup() {
   pinMode(blueLED,OUTPUT);
   pinMode(wakeUpPin,INPUT_PULLDOWN);   // This pin is active HIGH
 
+  EEPROM.put(lastWateredPeriodAddr,5);  // Sets the last watered period to the current one
+  EEPROM.put(lastWateredDayAddr,3);            // Stored in EEPROM since this issue only comes in case of a reset
+
+
   EEPROM.get(lastWateredPeriodAddr,lastWateredPeriod);    // Load the last watered period from EEPROM
   EEPROM.get(lastWateredDayAddr,lastWateredDay);          // Load the last watered day from EEPROM
 
@@ -123,7 +127,7 @@ void loop() {
               lastWateredDay = currentDay;
               lastWateredPeriod = currentPeriod;
               EEPROM.put(lastWateredPeriodAddr,currentPeriod);  // Sets the last watered period to the current one
-              EEPROM.put(lastWateredDay,currentDay);            // Stored in EEPROM since this issue only comes in case of a reset
+              EEPROM.put(lastWateredDayAddr,currentDay);            // Stored in EEPROM since this issue only comes in case of a reset
               if (currentPeriod == startWaterHour) wateringMinutes = longWaterMinutes;
               else wateringMinutes = shortWaterMinutes;
             }
@@ -152,7 +156,8 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   // Upon reset, the water will be turned off averting disaster
   digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
   digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
-  //doneEnabled = false;          // Will suspend watchdog petting until water is turned off
+  // Uncomment this next line only after you are sure your watchdog timer interval is greater than watering period
+  // doneEnabled = false;          // Will suspend watchdog petting until water is turned off
   Particle.publish("Watering","Watering");
   digitalWrite(blueLED, HIGH);
   digitalWrite(solenoidPin, HIGH);
