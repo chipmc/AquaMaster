@@ -9,7 +9,7 @@ STARTUP(WiFi.selectAntenna(ANT_AUTO)); // continually switches at high speed bet
 SYSTEM_THREAD(ENABLED);
 
 // Software Release lets me know what version the Particle is running
-#define SOFTWARERELEASENUMBER "0.4"
+#define SOFTWARERELEASENUMBER "0.42"
 
 // Included Libraries
 #include <I2CSoilMoistureSensor.h>   // Apollon77's Chirp Library: https://github.com/Apollon77/I2CSoilMoistureSensor
@@ -84,10 +84,6 @@ void setup() {
   digitalWrite(solenoidPin, LOW);
   pinMode(blueLED,OUTPUT);
   pinMode(wakeUpPin,INPUT_PULLDOWN);   // This pin is active HIGH
-
-  EEPROM.put(lastWateredPeriodAddr,5);  // Sets the last watered period to the current one
-  EEPROM.put(lastWateredDayAddr,3);            // Stored in EEPROM since this issue only comes in case of a reset
-
 
   EEPROM.get(lastWateredPeriodAddr,lastWateredPeriod);    // Load the last watered period from EEPROM
   EEPROM.get(lastWateredDayAddr,lastWateredDay);          // Load the last watered day from EEPROM
@@ -167,6 +163,8 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   digitalWrite(solenoidPin, LOW);
   wateringNow = 0;
   doneEnabled = true;         // Successful response - can pet the dog again
+  getMoisture();                          // Test soil Moisture
+  sendToUbidots();
   Particle.publish("Watering","Done");
 }
 
