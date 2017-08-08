@@ -74,7 +74,7 @@ void setup() {
   Particle.function("start-stop", startStop);       // Here are two functions for easy control
   Particle.function("Enabled", wateringEnabled);
   Particle.function("Measure", takeMeasurements);     // If we want to see Temp / Moisture values updated
-  Particle.subscribe("hook-response/AquaMaster", dataHandler, MY_DEVICES);      // Subscribe to the integration response event
+  Particle.subscribe("hook-response/Ubidots_hook", dataHandler, MY_DEVICES);      // Subscribe to the integration response event
   Particle.subscribe("hook-response/weatherU_hook", weatherHandler,MY_DEVICES); // Subscribe to weather response
 
   Time.zone(-4);    // Raleigh DST (watering is for the summer)
@@ -135,13 +135,13 @@ void loop() {
     }
     else strcpy(wateringContext,"Not Enabled");
     Particle.publish("Watering", wateringContext);
-    sendToUbidots();
+    sendToUbidots();      // Let Ubidots know what we are doing
   }
-  if (wateringMinutes)
+  if (wateringMinutes)      // This IF statement waits for permission to water
   {
-    unsigned long waterTime = wateringMinutes * oneMinuteMillis;
-    wateringMinutes = 0;
-    turnOnWater(waterTime);
+    unsigned long waterTime = wateringMinutes * oneMinuteMillis;    // Set the watering duration
+    wateringMinutes = 0;  // Reset wateringMinutes for next time
+    turnOnWater(waterTime);   // Starts the watering function
   }
 }
 
@@ -279,34 +279,29 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  if ((capValue >= 676) || (capValue <=474))
+  if (capValue > 650) capValue = 650;        // Higher than this is just more wet
+  else if (capValue < 450) capValue = 450;     // Lower than this is just more dry
+  int strength = map(capValue, 450, 650, 0, 5);
+  switch (strength)
   {
-    strcpy(capDescription,"Error");
-  }
-  else
-  {
-    int strength = map(capValue, 475, 675, 0, 5);
-    switch (strength)
-    {
-      case 0:
-        strcpy(capDescription,"Very Dry");
-        break;
-      case 1:
-        strcpy(capDescription,"Dry");
-        break;
-      case 2:
-        strcpy(capDescription,"Normal");
-        break;
-      case 3:
-        strcpy(capDescription,"Wet");
-        break;
-      case 4:
-        strcpy(capDescription,"Very Wet");
-        break;
-      case 5:
-        strcpy(capDescription,"Waterlogged");
-        break;
-    }
+    case 0:
+      strcpy(capDescription,"Very Dry");
+      break;
+    case 1:
+      strcpy(capDescription,"Dry");
+      break;
+    case 2:
+      strcpy(capDescription,"Normal");
+      break;
+    case 3:
+      strcpy(capDescription,"Wet");
+      break;
+    case 4:
+      strcpy(capDescription,"Very Wet");
+      break;
+    case 5:
+      strcpy(capDescription,"Waterlogged");
+      break;
   }
   strcpy(Moisture,capDescription);
   strcat(Moisture,": ");
