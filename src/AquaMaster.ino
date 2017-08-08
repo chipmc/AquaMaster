@@ -9,7 +9,7 @@ STARTUP(WiFi.selectAntenna(ANT_AUTO)); // continually switches at high speed bet
 SYSTEM_THREAD(ENABLED);
 
 // Software Release lets me know what version the Particle is running
-#define SOFTWARERELEASENUMBER "0.42"
+#define SOFTWARERELEASENUMBER "0.5"
 
 // Included Libraries
 #include <I2CSoilMoistureSensor.h>   // Apollon77's Chirp Library: https://github.com/Apollon77/I2CSoilMoistureSensor
@@ -33,10 +33,11 @@ int startWaterHour = 5;                  // When can we start watering
 int stopWaterHour = 8;                   // When do we stop for the day
 int wateringNow = 0;
 int waterEnabled = 1;
-int expectedRainfallToday = 0;        // From Weather Underground Simple Forecast qpf_allday
+float expectedRainfallToday = 0;        // From Weather Underground Simple Forecast qpf_allday
 
 // Measurement Variables
 char Signal[17];                        // Used to communicate Wireless RSSI and Description
+char Rainfall[5];                       // Report Rainfall preduction
 int capValue = 0;                       // This is where we store the soil moisture sensor raw data
 int soilTemp = 0;                       // Soil Temp is measured 3" deep
 char capDescription[12];                // Characterize using a map function
@@ -52,7 +53,9 @@ int currentDay = 0;
 const char* releaseNumber = SOFTWARERELEASENUMBER;  // Displays the release on the menu
 volatile bool doneEnabled = true;    // This enables petting the watchdog
 int lastWateredPeriodAddr = 0;      // Where I store the last watered period in EEPROM
-int lastWateredDayAddr = 4;
+int lastWateredDayAddr = 0;
+char wateringContext[25];           // Why did we water or not
+
 
 
 void setup() {
@@ -67,9 +70,10 @@ void setup() {
   Particle.variable("Enabled", waterEnabled);
   Particle.variable("Release",releaseNumber);
   Particle.variable("LastWater",lastWateredPeriod);
-  Particle.variable("RainFcst", expectedRainfallToday);
+  Particle.variable("RainFcst", Rainfall);
   Particle.function("start-stop", startStop);       // Here are two functions for easy control
   Particle.function("Enabled", wateringEnabled);
+  Particle.function("Measure", takeMeasurements);     // If we want to see Temp / Moisture values updated
   Particle.subscribe("hook-response/AquaMaster", dataHandler, MY_DEVICES);      // Subscribe to the integration response event
   Particle.subscribe("hook-response/weatherU_hook", weatherHandler,MY_DEVICES); // Subscribe to weather response
 
@@ -105,9 +109,7 @@ void loop() {
   {
     Particle.publish("weatherU_hook");      // Get the weather forcast
     NonBlockingDelay(5000);                 // Give the Weather Underground time to respond
-    getMoisture();                          // Test soil Moisture
-    getWiFiStrength();                      // Get the WiFi Signal strength
-    soilTemp = int(sensor.getTemperature()/(float)10);    // Get the Soil temperature
+    takeMeasurements("take");               // Take measurements - use the Particle.function here
     currentPeriod = Time.hour();            // Set the new current period
     currentDay = Time.day();                // Sets the current Day
     if (waterEnabled)
@@ -118,28 +120,28 @@ void loop() {
         {
           if (currentPeriod != lastWateredPeriod || currentDay != lastWateredDay)
           {
-            if (expectedRainfallToday <= 1.1)
+            if (expectedRainfallToday <= 0.5)
             {
-              lastWateredDay = currentDay;
-              lastWateredPeriod = currentPeriod;
-              EEPROM.put(lastWateredPeriodAddr,currentPeriod);  // Sets the last watered period to the current one
-              EEPROM.put(lastWateredDayAddr,currentDay);            // Stored in EEPROM since this issue only comes in case of a reset
               if (currentPeriod == startWaterHour) wateringMinutes = longWaterMinutes;
               else wateringMinutes = shortWaterMinutes;
             }
-            else Particle.publish("Watering","Heavy Rain Expected");
+            else strcpy(wateringContext,"Heavy Rain Expected");
           }
-          else Particle.publish("Watering","Already Watered");
+          else strcpy(wateringContext,"Already Watered");
         }
-        else Particle.publish("Watering","Not Needed");
+        else strcpy(wateringContext,"Not Needed");
       }
-      else Particle.publish("Watering","Not Time");
+      else strcpy(wateringContext,"Not Time");
     }
-    else Particle.publish("Watering","Not Enabled");
-    unsigned long waterTime = wateringMinutes * oneMinuteMillis;
+    else strcpy(wateringContext,"Not Enabled");
+    Particle.publish("Watering", wateringContext);
     sendToUbidots();
-    if (waterTime) turnOnWater(waterTime);
+  }
+  if (wateringMinutes)
+  {
+    unsigned long waterTime = wateringMinutes * oneMinuteMillis;
     wateringMinutes = 0;
+    turnOnWater(waterTime);
   }
 }
 
@@ -163,23 +165,27 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   digitalWrite(solenoidPin, LOW);
   wateringNow = 0;
   doneEnabled = true;         // Successful response - can pet the dog again
-  getMoisture();                          // Test soil Moisture
-  sendToUbidots();
+  lastWateredDay = currentDay;
+  lastWateredPeriod = currentPeriod;
+  EEPROM.put(lastWateredPeriodAddr,currentPeriod);  // Sets the last watered period to the current one
+  EEPROM.put(lastWateredDayAddr,currentDay);            // Stored in EEPROM since this issue only comes in case of a reset
   Particle.publish("Watering","Done");
 }
 
 void sendToUbidots()      // Houly update to Ubidots for serial data logging and analysis
 {
-  String data = String::format("{\"Moisture\":%i, \"Watering\":%i, \"SoilTemp\":%i}",capValue, wateringMinutes, soilTemp);
-  Particle.publish("AquaMaster", data, PRIVATE);
-  NonBlockingDelay(1000);     //Makes sure we are spacing out our Particle.publish requests
+  char data[256];
+  snprintf(data, sizeof(data), "{\"Moisture\":%i, \"Watering\":%i, \"key1\":\"%s\", \"SoilTemp\":%i}",capValue, wateringMinutes, wateringContext, soilTemp);
+  Particle.publish("Ubidots_hook", data , PRIVATE);
+  NonBlockingDelay(1000);             // Makes sure we are spacing out our Particle.publish requests
 }
 
-int startStop(String command)   // So we can manually turn on the water for testing and setup
+int startStop(String command)         // So we can manually turn on the water for testing and setup
 {
   if (command == "start")
   {
-    turnOnWater(oneMinuteMillis);
+    wateringMinutes = shortWaterMinutes;
+    sendToUbidots();
     return 1;
   }
   else if (command == "stop")
@@ -213,6 +219,21 @@ int wateringEnabled(String command)       // If I sense something is amiss, I wa
     else
     {
       waterEnabled = 0;
+      return 0;
+    }
+  }
+
+int takeMeasurements(String command)       // If I sense something is amiss, I wanted to be able to easily disable watering
+  {
+    if (command == "take")
+    {
+      getMoisture();                          // Test soil Moisture
+      getWiFiStrength();                      // Get the WiFi Signal strength
+      soilTemp = int(sensor.getTemperature()/(float)10);    // Get the Soil temperature
+      return 1;
+    }
+    else
+    {
       return 0;
     }
   }
@@ -258,13 +279,13 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  if ((capValue >= 652) || (capValue <=349))
+  if ((capValue >= 676) || (capValue <=474))
   {
     strcpy(capDescription,"Error");
   }
   else
   {
-    int strength = map(capValue, 350, 651, 0, 5);
+    int strength = map(capValue, 475, 675, 0, 5);
     switch (strength)
     {
       case 0:
@@ -308,6 +329,7 @@ void weatherHandler(const char *event, const char *data)    // Extracts the expe
   // Uses forecast JSON for Raleigh-Durham Airport
   // Response template gets current date and qpf_allday
   // Only look at the current day
+  // JSON payload - http://api.wunderground.com/api/(my key)/forecast/q/nc/raleigh-durham.json
   if (!data) {              // First check to see if there is any data
     Particle.publish("Weather", "No Data");
     return;
@@ -316,8 +338,8 @@ void weatherHandler(const char *event, const char *data)    // Extracts the expe
   char strBuffer[30] = "";
   str.toCharArray(strBuffer, 30); // example: "\"2~0~3~0~4~0~5~0.07~\""
   int forecastDay = atoi(strtok(strBuffer, "\"~"));
-  int expectedRainfallToday = atoi(strtok(NULL, "~"));
-  if (forecastDay != currentDay) expectedRainfallToday = 0;   // In case we have the wrong day's forecast
+  expectedRainfallToday = atof(strtok(NULL, "~"));
+  strcpy(Rainfall,String(expectedRainfallToday,2));
 }
 
 void dataHandler(const char *event, const char *data)   // Looks at the response from Ubidots - not acting on this now
