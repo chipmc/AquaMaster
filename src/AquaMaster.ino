@@ -4,6 +4,7 @@
  * Author: Chip McClelland
  * Date: 7/18/17
  */
+ // Wiring for Chirp (Board/Assign/Cable) - Red/Vcc/Orange, Black/GND/Green, Blue/SCL/Green&White, Yellow/SDA/Orange&White
 
 STARTUP(WiFi.selectAntenna(ANT_AUTO)); // continually switches at high speed between antennas
 SYSTEM_THREAD(ENABLED);
@@ -120,7 +121,7 @@ void loop() {
         {
           if (currentPeriod != lastWateredPeriod || currentDay != lastWateredDay)
           {
-            if (expectedRainfallToday <= 0.5)
+            if (expectedRainfallToday <= 0.4)
             {
               if (currentPeriod == startWaterHour) wateringMinutes = longWaterMinutes;
               else wateringMinutes = shortWaterMinutes;
@@ -280,12 +281,10 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  if (capValue > 650) {
-    Particle.publish("RawValue",String(capValue));
-    capValue = 650;        // Higher than this is just more wet
-  }
-  else if (capValue < 450) capValue = 450;     // Lower than this is just more dry
-  int strength = map(capValue, 450, 650, 0, 5);
+  Particle.publish("RawValue",String(capValue));
+  //if (capValue > 650) capValue = 650;        // Higher than this is just more wet
+  //else if (capValue < 450) capValue = 450;     // Lower than this is just more dry
+  int strength = map(capValue, 300, 800, 0, 5);
   switch (strength)
   {
     case 0:
