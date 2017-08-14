@@ -74,7 +74,7 @@ void setup() {
   Particle.function("start-stop", startStop);       // Here are two functions for easy control
   Particle.function("Enabled", wateringEnabled);
   Particle.function("Measure", takeMeasurements);     // If we want to see Temp / Moisture values updated
-  Particle.subscribe("hook-response/Ubidots_hook", dataHandler, MY_DEVICES);      // Subscribe to the integration response event
+  Particle.subscribe("hook-response/Ubidots_hook", UbidotsHandler, MY_DEVICES);      // Subscribe to the integration response event
   Particle.subscribe("hook-response/weatherU_hook", weatherHandler,MY_DEVICES); // Subscribe to weather response
 
   Time.zone(-4);    // Raleigh DST (watering is for the summer)
@@ -271,7 +271,8 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
   }
   strcpy(Signal,RSSIdescription);
   strcat(Signal,": ");
-  strcat(Signal,String(wifiRSSI));            // Signal is both description and RSSI for Particle variable
+  snprintf(Signal,sizeof(Signal),"%d",wifiRSSI);
+  // strcat(Signal,String(wifiRSSI));            // Signal is both description and RSSI for Particle variable
   return 1;
 }
 
@@ -279,7 +280,10 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  if (capValue > 650) capValue = 650;        // Higher than this is just more wet
+  if (capValue > 650) {
+    Particle.publish("RawValue",String(capValue));
+    capValue = 650;        // Higher than this is just more wet
+  }
   else if (capValue < 450) capValue = 450;     // Lower than this is just more dry
   int strength = map(capValue, 450, 650, 0, 5);
   switch (strength)
@@ -305,7 +309,8 @@ void getMoisture()          // Here we get the soil moisture and characterize it
   }
   strcpy(Moisture,capDescription);
   strcat(Moisture,": ");
-  strcat(Moisture,String(capValue));
+  snprintf(Moisture,sizeof(Moisture),"%d",capValue);
+  //strcat(Moisture,String(capValue));
   Particle.publish("Moisture Level", Moisture);
 }
 
@@ -329,57 +334,32 @@ void weatherHandler(const char *event, const char *data)    // Extracts the expe
     Particle.publish("Weather", "No Data");
     return;
   }
-  String str = String(data);
+  //String str = String(data);
   char strBuffer[30] = "";
-  str.toCharArray(strBuffer, 30); // example: "\"2~0~3~0~4~0~5~0.07~\""
+  //str.toCharArray(strBuffer, 30); // example: "\"2~0~3~0~4~0~5~0.07~\""
+  //int forecastDay = atoi(strtok(strBuffer, "\"~"));
+  strcpy(strBuffer,data);
   int forecastDay = atoi(strtok(strBuffer, "\"~"));
   expectedRainfallToday = atof(strtok(NULL, "~"));
-  strcpy(Rainfall,String(expectedRainfallToday,2));
+  snprintf(Rainfall,sizeof(Rainfall),"%4.2f",expectedRainfallToday);
+  //strcpy(Rainfall,String(expectedRainfallToday,2));
 }
 
-void dataHandler(const char *event, const char *data)   // Looks at the response from Ubidots - not acting on this now
+void UbidotsHandler(const char *event, const char *data)   // Looks at the response from Ubidots - not acting on this now
 {
   if (!data) {              // First check to see if there is any data
-    Particle.publish("WebHook", "No Data");
+    Particle.publish("UbidotsResp", "No Data");
     return;
   }
-  String response = data;   // If there is data - copy it into a String variable
-  int datainResponse = response.indexOf("moisture") + 24; // Find the "hourly" field and add 24 to get to the value
-  String responseCodeString = response.substring(datainResponse,datainResponse+3);  // Trim all but the value
-  int responseCode = responseCodeString.toInt();  // Put this into an int for comparisons
-  switch (responseCode) {   // From the Ubidots API refernce https://ubidots.com/docs/api/#response-codes
-    case 200:
-      Serial.println("Request successfully completed");
-      doneEnabled = true;   // Successful response - can pet the dog again
-      digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
-      digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
-      break;
-    case 201:
-      Serial.println("Successful request - new data point created");
-      doneEnabled = true;   // Successful response - can pet the dog again
-      digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
-      digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
-      break;
-    case 400:
-      Serial.println("Bad request - check JSON body");
-      break;
-    case 403:
-      Serial.println("Forbidden token not valid");
-      break;
-    case 404:
-      Serial.println("Not found - verify variable and device ID");
-      break;
-    case 405:
-      Serial.println("Method not allowed for API endpoint chosen");
-      break;
-    case 501:
-      Serial.println("Internal error");
-      break;
-    default:
-      Serial.print("Ubidots Response Code: ");    // Non-listed code - generic response
-      Serial.println(responseCode);
-      break;
+  int responseCode = atoi(data);
+  if ((responseCode == 200) || (responseCode == 201))
+  {
+    Particle.publish("UbidotsHook","Success");
+    doneEnabled = true;   // Successful response - can pet the dog again
+    digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
+    digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
   }
+  else Particle.publish("UbidotsHook", data);
 }
 
 void watchdogISR()    // Will pet the dog ... if petting is allowed
