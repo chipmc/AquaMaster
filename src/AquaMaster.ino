@@ -10,7 +10,7 @@ STARTUP(WiFi.selectAntenna(ANT_AUTO)); // continually switches at high speed bet
 SYSTEM_THREAD(ENABLED);
 
 // Software Release lets me know what version the Particle is running
-#define SOFTWARERELEASENUMBER "0.5"
+#define SOFTWARERELEASENUMBER "0.6"
 
 // Included Libraries
 #include <I2CSoilMoistureSensor.h>   // Apollon77's Chirp Library: https://github.com/Apollon77/I2CSoilMoistureSensor
@@ -27,13 +27,13 @@ const int wakeUpPin = A7;            // This is the Particle Electron WKP pin
 // Program variables
 // Watering Variables
 unsigned long oneMinuteMillis = 60000;    // For Testing the system and smaller adjustments
-int shortWaterMinutes = 1;
-int longWaterMinutes = 5;
-int wateringMinutes = 0;             // How long will we water based on time or Moisture
+int shortWaterMinutes = 1;                // Short watering cycle
+int longWaterMinutes = 5;                 // Long watering cycle - must be shorter than watchdog interval!
+int wateringMinutes = 0;                  // How long will we water based on time or Moisture
 int startWaterHour = 5;                  // When can we start watering
 int stopWaterHour = 8;                   // When do we stop for the day
-int wateringNow = 0;
-int waterEnabled = 1;
+int wateringNow = 0;                      // Status - watering?
+int waterEnabled = 1;                     // Allows you to disable watering from the app or Ubidots
 float expectedRainfallToday = 0;        // From Weather Underground Simple Forecast qpf_allday
 
 // Measurement Variables
@@ -45,19 +45,17 @@ char capDescription[12];                // Characterize using a map function
 char Moisture[15];                      // Combines description and capValue
 
 // Time Period Variables
-int currentPeriod = 0;  // Change length of period for testing 2 times in main loop
-int lastWateredPeriod = 0; // So we only wanter once an hour
-int lastWateredDay = 0;   // Need to reset the last watered period each day
-int currentDay = 0;
+int currentPeriod = 0;                  // Change length of period for testing 2 places in main loop
+int lastWateredPeriod = 0;              // So we only wanter once an hour
+int lastWateredDay = 0;                 // Need to reset the last watered period each day
+int currentDay = 0;                     // Updated so we can tell which day we last watered
 
 // Control Variables
 const char* releaseNumber = SOFTWARERELEASENUMBER;  // Displays the release on the menu
-volatile bool doneEnabled = true;    // This enables petting the watchdog
-int lastWateredPeriodAddr = 0;      // Where I store the last watered period in EEPROM
+volatile bool doneEnabled = true;       // This enables petting the watchdog
+int lastWateredPeriodAddr = 0;          // Where I store the last watered period in EEPROM
 int lastWateredDayAddr = 0;
-char wateringContext[25];           // Why did we water or not
-
-
+char wateringContext[25];               // Why did we water or not
 
 void setup() {
   pinMode(donePin,OUTPUT);       // Allows us to pet the watchdog
@@ -88,20 +86,10 @@ void setup() {
   pinMode(solenoidPin,OUTPUT);
   digitalWrite(solenoidPin, LOW);
   pinMode(blueLED,OUTPUT);
-  pinMode(wakeUpPin,INPUT_PULLDOWN);   // This pin is active HIGH
+  pinMode(wakeUpPin,INPUT_PULLDOWN);                      // This pin is active HIGH
 
   EEPROM.get(lastWateredPeriodAddr,lastWateredPeriod);    // Load the last watered period from EEPROM
   EEPROM.get(lastWateredDayAddr,lastWateredDay);          // Load the last watered day from EEPROM
-
-  Serial.println("");                 // Header information
-  Serial.print(F("AquaMaster - release "));
-  Serial.println(releaseNumber);
-
-  Serial.print("I2C Soil Moisture Sensor Address: ");
-  Serial.println(sensor.getAddress(),HEX);
-  Serial.print("Sensor Firmware version: ");
-  Serial.println(sensor.getVersion(),HEX);
-  Serial.println();
 }
 
 
@@ -153,10 +141,10 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   // We will pet the dog then disable petting until the end of the function
   // That way, if the Particle freezes while the water is on, it will be reset by the watchdog
   // Upon reset, the water will be turned off averting disaster
-  digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
-  digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
+  digitalWrite(donePin, HIGH);  // We will pet the dog now so we have the full interval to water
+  digitalWrite(donePin, LOW);   // We set the delay resistor to 50k or 7 mins so that is the longest watering duration
   // Uncomment this next line only after you are sure your watchdog timer interval is greater than watering period
-  // doneEnabled = false;          // Will suspend watchdog petting until water is turned off
+  doneEnabled = false;          // Will suspend watchdog petting until water is turned off
   Particle.publish("Watering","Watering");
   digitalWrite(blueLED, HIGH);
   digitalWrite(solenoidPin, HIGH);
@@ -166,6 +154,8 @@ void turnOnWater(unsigned long duration)    // Where we water the plants - criti
   digitalWrite(solenoidPin, LOW);
   wateringNow = 0;
   doneEnabled = true;         // Successful response - can pet the dog again
+  digitalWrite(donePin, HIGH);  // If an interrupt came in while petting disabled, we missed it so...
+  digitalWrite(donePin, LOW);   // will pet the fdog just to be safe
   lastWateredDay = currentDay;
   lastWateredPeriod = currentPeriod;
   EEPROM.put(lastWateredPeriodAddr,currentPeriod);  // Sets the last watered period to the current one
@@ -281,10 +271,8 @@ int getWiFiStrength()       // Measure and describe wireless signal strength
 void getMoisture()          // Here we get the soil moisture and characterize it to see if watering is needed
 {
   capValue = sensor.getCapacitance();
-  Particle.publish("RawValue",String(capValue));
-  //if (capValue > 650) capValue = 650;        // Higher than this is just more wet
-  //else if (capValue < 450) capValue = 450;     // Lower than this is just more dry
-  int strength = map(capValue, 300, 800, 0, 5);
+  char capValueString[4];
+  int strength = map(capValue, 300, 600, 0, 5);
   switch (strength)
   {
     case 0:
@@ -308,8 +296,8 @@ void getMoisture()          // Here we get the soil moisture and characterize it
   }
   strcpy(Moisture,capDescription);
   strcat(Moisture,": ");
-  snprintf(Moisture,sizeof(Moisture),"%d",capValue);
-  //strcat(Moisture,String(capValue));
+  snprintf(capValueString,sizeof(capValueString),"%d",capValue);
+  strcat(Moisture,capValueString);
   Particle.publish("Moisture Level", Moisture);
 }
 
