@@ -111,6 +111,7 @@ void loop() {
           {
             if (expectedRainfallToday <= 0.4)
             {
+              strcpy(wateringContext,"Watering");
               if (currentPeriod == startWaterHour) wateringMinutes = longWaterMinutes;
               else wateringMinutes = shortWaterMinutes;
             }
