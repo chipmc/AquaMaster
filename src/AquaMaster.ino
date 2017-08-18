@@ -10,7 +10,7 @@ STARTUP(WiFi.selectAntenna(ANT_AUTO));      // continually switches at high spee
 SYSTEM_THREAD(ENABLED);
 
 // Software Release lets me know what version the Particle is running
-#define SOFTWARERELEASENUMBER "0.62"
+#define SOFTWARERELEASENUMBER "0.7"
 
 // Included Libraries
 #include <I2CSoilMoistureSensor.h>          // Apollon77's Chirp Library: https://github.com/Apollon77/I2CSoilMoistureSensor
