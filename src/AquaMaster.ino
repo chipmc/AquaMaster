@@ -6,7 +6,7 @@
  */
  // Wiring for Chirp (Board/Assign/Cable) - Red/Vcc/Orange, Black/GND/Green, Blue/SCL/Green&White, Yellow/SDA/Orange&White
 
-STARTUP(WiFi.selectAntenna(ANT_AUTO));      // continually switches at high speed between antennas
+STARTUP(WiFi.selectAntenna(ANT_EXTERNAL));      // continually switches at high speed between antennas
 SYSTEM_THREAD(ENABLED);
 
 // Software Release lets me know what version the Particle is running
@@ -37,6 +37,7 @@ float expectedRainfallToday = 0;            // From Weather Underground Simple F
 
 // Measurement Variables
 char Signal[17];                            // Used to communicate Wireless RSSI and Description
+char* levels[6] = {"Poor", "Low", "Medium", "Good", "Very Good", "Great"};
 char Rainfall[5];                           // Report Rainfall preduction
 int capValue = 0;                           // This is where we store the soil moisture sensor raw data
 int soilTemp = 0;                           // Soil Temp is measured 3" deep
@@ -222,57 +223,30 @@ int wateringEnabled(String command)                       // If I sense somethin
   }
 
 int takeMeasurements(String command)                      // Allows me to monitor variables between normal hourly updates
-  {
-    if (command == "1")                                   // Take a set of measurements
-    {
-      getMoisture();                                      // Test soil Moisture
-      getWiFiStrength();                                  // Get the WiFi Signal strength
-      soilTemp = int(sensor.getTemperature()/(float)10);  // Get the Soil temperature
-      return 1;
-    }
-    else                                                  // In case something other than "1" is entered
-    {
-      return 0;
-    }
-  }
-
-int getWiFiStrength()                                     // Measure and describe wireless signal strength
 {
-  int wifiRSSI = WiFi.RSSI();                             // Get the signed integer for RSSI
-  char RSSIString[4];                                     // Need to create a char array so we can combine later
-  snprintf(RSSIString,sizeof(RSSIString),"%d",wifiRSSI);  // Put string value into array
-  char RSSIdescription[12];                               // Want to put the words with it as well
-  if (wifiRSSI >= 0)                                      // Greater than zero is not possible
+  if (command == "1")                                   // Take a set of measurements
   {
-    strcpy(Signal,"Error");
+    getMoisture();                                      // Test soil Moisture
+    getWiFiStrength();                                  // Get the WiFi Signal strength
+    soilTemp = int(sensor.getTemperature()/(float)10);  // Get the Soil temperature
+    return 1;
+  }
+  else                                                  // In case something other than "1" is entered
+  {
     return 0;
   }
-  int strength = map(wifiRSSI, -127, -1, 0, 5);           // Map the RSSI values to words - valid RSSI falls in this range
-  switch (strength)
-  {
-    case 0:
-      strcpy(RSSIdescription,"Poor");
-      break;
-    case 1:
-      strcpy(RSSIdescription, "Low");
-      break;
-    case 2:
-      strcpy(RSSIdescription,"Medium");
-      break;
-    case 3:
-      strcpy(RSSIdescription,"Good");
-      break;
-    case 4:
-      strcpy(RSSIdescription,"Very Good");
-      break;
-    case 5:
-      strcpy(RSSIdescription,"Great");
-      break;
-  }
-  strcpy(Signal,RSSIdescription);                         // Combine signal description and value
-  strcat(Signal,": ");
-  strcat(Signal,RSSIString);                              // Value from above
-  return 1;
+}
+
+int getWiFiStrength()
+{
+    int wifiRSSI = WiFi.RSSI();
+    if (wifiRSSI > 0) {
+        sprintf(Signal, "Error");
+    }else {
+        int strength = map(wifiRSSI, -127, -1, 0, 5);
+        sprintf(Signal, "%s: %d", levels[strength], wifiRSSI);
+    }
+    return 1;
 }
 
 
@@ -281,7 +255,7 @@ void getMoisture()                                        // Here we get the soi
   capValue = sensor.getCapacitance();                     // capValue is typically between 300 and 700
   char capValueString[4];                                 // Create a char arrray and load with the capValue for later string formation
   snprintf(capValueString,sizeof(capValueString),"%d",capValue);
-  int strength = map(capValue, 300, 500, 0, 5);           // Map - these values to cases that will use words that are easier to understand
+  int strength = map(capValue, 400, 520, 0, 5);           // Map - these values to cases that will use words that are easier to understand
   switch (strength)                                       // Main loop watering logic is based on capDescription not the capValue
   {
     case 0:
